@@ -206,7 +206,7 @@ func parseMetric(buf []byte, schemas persister.WhisperSchemas) *schema.MetricDat
 		log.Error("RouteGrafanaNet: %q error: %s", str, err.Error())
 		return nil
 	}
-	timestamp, err := strconv.ParseUint(elements[2], 10, 32)
+	timestamp, err := strconv.ParseFloat(elements[2], 64)
 	if err != nil {
 		log.Error("RouteGrafanaNet: %q error: %s", str, err.Error())
 		return nil

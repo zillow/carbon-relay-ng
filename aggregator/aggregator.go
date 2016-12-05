@@ -166,7 +166,7 @@ func (agg *Aggregator) run() {
 				continue
 			}
 			value, _ := strconv.ParseFloat(string(fields[1]), 64)
-			t, _ := strconv.ParseUint(string(fields[2]), 10, 0)
+			t, _ := strconv.ParseFloat(string(fields[2]), 64)
 			ts := uint(t)
 
 			var dst []byte
