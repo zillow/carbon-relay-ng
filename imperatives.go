@@ -65,6 +65,7 @@ var tokens = []toki.Def{
 	{Token: optAddr, Pattern: "addr="},
 	{Token: optSub, Pattern: "sub="},
 	{Token: optRegex, Pattern: "regex="},
+	{Token: optReplica, Pattern: "replicas="},
 	{Token: optFlush, Pattern: "flush="},
 	{Token: optReconn, Pattern: "reconn="},
 	{Token: optPickle, Pattern: "pickle="},
@@ -522,6 +523,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			return destinations, errors.New("addr not set for endpoint")
 		}
 		addr = string(t.Value)
+		var replicaAddrs := make(map[string]bool)
 
 		for t.Token != toki.EOF && t.Token != sep {
 			t = s.Next()
@@ -573,6 +575,15 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				if err != nil {
 					return destinations, fmt.Errorf("unrecognized spool value '%s'", t)
 				}
+			case optReplica:
+				if t = s.Next(); t.Token != word {
+					return destinations, errFmtAddRoute
+				}
+				replicas = string(t.Value)
+				addrs = strings.Split(replicas, ";")
+				for _, host := range addrs {
+					replicaAddrs[host] = true
+				}
 			case toki.EOF:
 			case sep:
 				break
@@ -587,6 +598,16 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			return destinations, fmt.Errorf("matching options (prefix, sub, and regex) not allowed for this route type")
 		}
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
+
+		// Creat NewDestination for replica hosts
+		var replicaDests = make(map[NewDestination]bool)
+		for host, value :range replicaAddrs {
+			tmp := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
+			replicaDests[tmp] = true
+		}
+
+		table.UpdateReplicaHosts(addr, replicaDests)
+
 		if err != nil {
 			return destinations, err
 		}
