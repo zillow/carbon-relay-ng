@@ -218,7 +218,7 @@ func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, s
 		return err
 	}
 
-	destinations, err := readDestinations(s, table, true)
+	destinations, destReplicas, err := readDestinations(s, table, true)
 	if err != nil {
 		return err
 	}
@@ -226,7 +226,7 @@ func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, s
 		return fmt.Errorf("must get at least 1 destination for route '%s'", key)
 	}
 
-	route, err := constructor(key, prefix, sub, regex, destinations)
+	route, err := constructor(key, prefix, sub, regex, destinations, destReplicas)
 	if err != nil {
 		return err
 	}
@@ -246,7 +246,7 @@ func readAddRouteConsistentHashing(s *toki.Scanner, table *Table) error {
 		return err
 	}
 
-	destinations, err := readDestinations(s, table, false)
+	destinations, destReplicas, err := readDestinations(s, table, false)
 	if err != nil {
 		return err
 	}
@@ -254,7 +254,7 @@ func readAddRouteConsistentHashing(s *toki.Scanner, table *Table) error {
 		return fmt.Errorf("must get at least 2 destination for route '%s'", key)
 	}
 
-	route, err := NewRouteConsistentHashing(key, prefix, sub, regex, destinations)
+	route, err := NewRouteConsistentHashing(key, prefix, sub, regex, destinations, destReplicas)
 	if err != nil {
 		return err
 	}
@@ -508,7 +508,7 @@ func readModRoute(s *toki.Scanner, table *Table) error {
 // we should read and apply all destinations at once,
 // or at least make sure we apply them to the global datastruct at once,
 // otherwise we can destabilize things / send wrong traffic, etc
-func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destinations []*Destination, err error) {
+func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destinations []*Destination, destReplicas map[string][]*Destination, err error) {
 	for t := s.Next(); t.Token != toki.EOF; {
 		if t.Token == sep {
 			t = s.Next()
@@ -520,7 +520,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		spoolDir = table.spoolDir
 
 		if t.Token != word {
-			return destinations, errors.New("addr not set for endpoint")
+			return destinations, destReplicas, errors.New("addr not set for endpoint")
 		}
 		addr = string(t.Value)
 		var replicaAddrs := make(map[string]bool)
@@ -530,38 +530,38 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			switch t.Token {
 			case optPrefix:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				prefix = string(t.Value)
 			case optSub:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				sub = string(t.Value)
 			case optRegex:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				regex = string(t.Value)
 			case optFlush:
 				if t = s.Next(); t.Token != num {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				flush, err = strconv.Atoi(strings.TrimSpace(string(t.Value)))
 				if err != nil {
-					return destinations, err
+					return destinations, destReplicas, err
 				}
 			case optReconn:
 				if t = s.Next(); t.Token != num {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				reconn, err = strconv.Atoi(strings.TrimSpace(string(t.Value)))
 				if err != nil {
-					return destinations, err
+					return destinations, destReplicas, err
 				}
 			case optPickle:
 				if t = s.Next(); t.Token != optTrue && t.Token != optFalse {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				pickle, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
@@ -569,7 +569,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				}
 			case optSpool:
 				if t = s.Next(); t.Token != optTrue && t.Token != optFalse {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				spool, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
@@ -577,7 +577,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				}
 			case optReplica:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				replicas = string(t.Value)
 				addrs = strings.Split(replicas, ";")
@@ -600,20 +600,17 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
 
 		// Creat NewDestination for replica hosts
-		var replicaDests = make(map[NewDestination]bool)
 		for host, value :range replicaAddrs {
 			tmp := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
-			replicaDests[tmp] = true
+			destReplicas[addr] = append(destReplicas[addr], tmp)
 		}
 
-		table.UpdateReplicaHosts(addr, replicaDests)
-
 		if err != nil {
-			return destinations, err
+			return destinations, destReplicas, err
 		}
 		destinations = append(destinations, dest)
 	}
-	return destinations, nil
+	return destinations, destReplicas, nil
 }
 
 func readRouteOpts(s *toki.Scanner) (prefix, sub, regex string, err error) {
