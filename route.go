@@ -119,7 +119,8 @@ func (route *baseRoute) run() {
 		// run dest
 		dest.Run()
 		// run dest replica
-		for _, destRep := range conf.Replicas()[dest.Addr] {
+		addr := dest.Addr + ":" + dest.Instance
+		for _, destRep := range conf.Replicas()[addr] {
 			destRep.Run()
 		}
 	}
@@ -135,7 +136,8 @@ func (route *RouteSendAllMatch) Dispatch(buf []byte) {
 			// feed data to dest
 			dest.in <- buf
 			// feed data to dest replicas
-			for _, destRep := range conf.Replicas()[dest.Addr] {
+			addr := dest.Addr + ":" + dest.Instance
+			for _, destRep := range conf.Replicas()[addr] {
 				destRep.in <- buf
 			}
 		}
@@ -152,7 +154,8 @@ func (route *RouteSendFirstMatch) Dispatch(buf []byte) {
 			// feed data to dest
 			dest.in <- buf
 			// feed data to dest replicas
-			for _, destRep := range conf.Replicas()[dest.Addr] {
+			addr := dest.Addr + ":" + dest.Instance
+			for _, destRep := range conf.Replicas()[addr] {
 				destRep.in <- buf
 			}
 			break
@@ -170,7 +173,8 @@ func (route *RouteConsistentHashing) Dispatch(buf []byte) {
 		// feed data to dest
 		dest.in <- buf
 		// feed data to dest replicas
-		for _, destRep := range conf.Replicas()[dest.Addr] {
+		addr := dest.Addr + ":" + dest.Instance
+		for _, destRep := range conf.Replicas()[addr] {
 			destRep.in <- buf
 		}
 	} else {
