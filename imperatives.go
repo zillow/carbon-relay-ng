@@ -605,7 +605,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		}
 
 		// Creat NewDestination for replica hosts
-		for host, value := range replicaAddrs {
+		for host,_ := range replicaAddrs {
 			tmp, err := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
 			if err != nil {
 				return destinations, destReplicas, err
