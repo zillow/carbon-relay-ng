@@ -53,7 +53,7 @@ type RouteSnapshot struct {
 	Dests     []*Destination 				`json:"destination"`
 	Type      string         				`json:"type"`
 	Key       string         				`json:"key"`
-	Replicas  map[string][]*Destination    	`json:replicas`
+	Replicas  map[string][]*Destination    	`json:"replicas"`
 }
 
 type baseRoute struct {
