@@ -49,10 +49,11 @@ type Route interface {
 }
 
 type RouteSnapshot struct {
-	Matcher Matcher        `json:"matcher"`
-	Dests   []*Destination `json:"destination"`
-	Type    string         `json:"type"`
-	Key     string         `json:"key"`
+	Matcher   Matcher        				`json:"matcher"`
+	Dests     []*Destination 				`json:"destination"`
+	Type      string         				`json:"type"`
+	Key       string         				`json:"key"`
+	Replicas  map[string][]*Destination    	`json:replicas`
 }
 
 type baseRoute struct {
@@ -200,7 +201,8 @@ func (route *baseRoute) Flush() error {
 			return err
 		}
 		// Iterate destReplica
-		for _, destRep := range conf.Replicas()[d.Addr] {
+		addr := d.Addr + ":" + d.Instance
+		for _, destRep := range conf.Replicas()[addr] {
 			err := destRep.Flush()
 			if err != nil {
 				return err
@@ -221,7 +223,8 @@ func (route *baseRoute) Shutdown() error {
 			destErrs = append(destErrs, err)
 		}
 		// Iterate dest replicas
-		for _, destRep := range conf.Replicas()[d.Addr] {
+		addr := d.Addr + ":" + d.Instance
+		for _, destRep := range conf.Replicas()[addr] {
 			err := destRep.Shutdown()
 			if err != nil {
 				destErrs = append(destErrs, err)
@@ -243,11 +246,16 @@ func (route *baseRoute) Shutdown() error {
 func makeSnapshot(route *baseRoute, routeType string) RouteSnapshot {
 	conf := route.config.Load().(RouteConfig)
 	dests := make([]*Destination, len(conf.Dests()))
+	replicas :=  make(map[string][]*Destination)
 	for i, d := range conf.Dests() {
 		dests[i] = d.Snapshot()
+		// Take snapshot for replica hosts
+		addr := dest.Addr + ":" + dest.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			replicas[addr] = append(replicas[addr], destRep.Snapshot())
+		}
 	}
-	return RouteSnapshot{*conf.Matcher(), dests, routeType, route.key}
-
+	return RouteSnapshot{*conf.Matcher(), dests, routeType, route.key, replicas}
 }
 
 func (route *RouteSendAllMatch) Snapshot() RouteSnapshot {
