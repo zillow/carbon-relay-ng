@@ -250,7 +250,7 @@ func makeSnapshot(route *baseRoute, routeType string) RouteSnapshot {
 	for i, d := range conf.Dests() {
 		dests[i] = d.Snapshot()
 		// Take snapshot for replica hosts
-		addr := dest.Addr + ":" + dest.Instance
+		addr := d.Addr + ":" + d.Instance
 		for _, destRep := range conf.Replicas()[addr] {
 			replicas[addr] = append(replicas[addr], destRep.Snapshot())
 		}
