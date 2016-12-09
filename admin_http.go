@@ -162,9 +162,9 @@ func parseRouteRequest(r *http.Request) (Route, *handlerError) {
 	var route Route
 	switch request.Type {
 	case "sendAllMatch":
-		route, err = NewRouteSendAllMatch(request.Key, request.Prefix, request.Substring, request.Regex, []*Destination{dest})
+		route, err = NewRouteSendAllMatch(request.Key, request.Prefix, request.Substring, request.Regex, []*Destination{dest}, make(map[string][]*Destination))
 	case "sendFirstMatch":
-		route, err = NewRouteSendFirstMatch(request.Key, request.Prefix, request.Substring, request.Regex, []*Destination{dest})
+		route, err = NewRouteSendFirstMatch(request.Key, request.Prefix, request.Substring, request.Regex, []*Destination{dest}, make(map[string][]*Destination))
 	default:
 		return nil, &handlerError{nil, "unknown route type: " + request.Type, http.StatusBadRequest}
 	}
