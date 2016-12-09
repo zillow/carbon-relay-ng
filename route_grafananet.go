@@ -93,7 +93,7 @@ func NewRouteGrafanaNet(key, prefix, sub, regex, addr, apiKey, schemasFile strin
 		numBuffered:       Gauge("dest=" + cleanAddr + ".unit=Metric.what=numBuffered"),
 	}
 
-	r.config.Store(baseRouteConfig{*m, make([]*Destination, 0)})
+	r.config.Store(baseRouteConfig{*m, make([]*Destination, 0), make(map[string][]*Destination)})
 	go r.run()
 	return r, nil
 }

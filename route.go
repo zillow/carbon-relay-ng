@@ -299,7 +299,7 @@ func (route *baseRoute) addDestination(dest *Destination, extendConfig baseConfi
 	conf := route.config.Load().(RouteConfig)
 	dest.Run()
 	newDests := append(conf.Dests(), dest)
-	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests})
+	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests, make(map[string][]*Destination)})
 	route.config.Store(newConf)
 }
 
@@ -320,7 +320,7 @@ func (route *baseRoute) delDestination(index int, extendConfig baseConfigExtende
 	}
 	conf.Dests()[index].Shutdown()
 	newDests := append(conf.Dests()[:index], conf.Dests()[index+1:]...)
-	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests})
+	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests, make(map[string][]*Destination)})
 	route.config.Store(newConf)
 	return nil
 }
@@ -363,7 +363,7 @@ func (route *baseRoute) update(opts map[string]string, extendConfig baseConfigEx
 		if err != nil {
 			return err
 		}
-		conf = extendConfig(baseRouteConfig{*matcher, conf.Dests()})
+		conf = extendConfig(baseRouteConfig{*matcher, conf.Dests(), make(map[string][]*Destination)})
 	}
 	route.config.Store(conf)
 	return nil
@@ -388,7 +388,7 @@ func (route *baseRoute) updateDestination(index int, opts map[string]string, ext
 	if err != nil {
 		return err
 	}
-	conf = extendConfig(baseRouteConfig{*conf.Matcher(), conf.Dests()})
+	conf = extendConfig(baseRouteConfig{*conf.Matcher(), conf.Dests(), make(map[string][]*Destination)})
 	route.config.Store(conf)
 	return nil
 }
@@ -405,7 +405,7 @@ func (route *baseRoute) updateMatcher(matcher Matcher, extendConfig baseConfigEx
 	route.Lock()
 	defer route.Unlock()
 	conf := route.config.Load().(RouteConfig)
-	conf = extendConfig(baseRouteConfig{matcher, conf.Dests()})
+	conf = extendConfig(baseRouteConfig{matcher, conf.Dests(), make(map[string][]*Destination)})
 	route.config.Store(conf)
 }
 

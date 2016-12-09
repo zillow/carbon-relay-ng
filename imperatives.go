@@ -600,16 +600,20 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		}
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
 
-		// Creat NewDestination for replica hosts
-		var tmp *Destination
-		for host, value := range replicaAddrs {
-			tmp = NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
-			destReplicas[addr] = append(destReplicas[addr], tmp)
-		}
-
 		if err != nil {
 			return destinations, destReplicas, err
 		}
+
+		// Creat NewDestination for replica hosts
+		for host, value := range replicaAddrs {
+			tmp, err := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
+			if err != nil {
+				return destinations, destReplicas, err
+			}
+			destReplicas[addr] = append(destReplicas[addr], tmp)
+		}
+
+		
 		destinations = append(destinations, dest)
 	}
 	return destinations, destReplicas, nil
