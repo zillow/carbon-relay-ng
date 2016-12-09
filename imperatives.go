@@ -32,6 +32,7 @@ const (
 	optAddr
 	optSub
 	optRegex
+	optReplica
 	optFlush
 	optReconn
 	optPickle
@@ -65,6 +66,7 @@ var tokens = []toki.Def{
 	{Token: optAddr, Pattern: "addr="},
 	{Token: optSub, Pattern: "sub="},
 	{Token: optRegex, Pattern: "regex="},
+	{Token: optReplica, Pattern: "replicas="},
 	{Token: optFlush, Pattern: "flush="},
 	{Token: optReconn, Pattern: "reconn="},
 	{Token: optPickle, Pattern: "pickle="},
@@ -205,7 +207,7 @@ func readAddBlack(s *toki.Scanner, table *Table) error {
 	return nil
 }
 
-func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, sub, regex string, destinations []*Destination) (Route, error)) error {
+func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, sub, regex string, destinations []*Destination, destReplicas map[string][]*Destination) (Route, error)) error {
 	t := s.Next()
 	if t.Token != word {
 		return errFmtAddRoute
@@ -217,7 +219,7 @@ func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, s
 		return err
 	}
 
-	destinations, err := readDestinations(s, table, true)
+	destinations, destReplicas, err := readDestinations(s, table, true)
 	if err != nil {
 		return err
 	}
@@ -225,7 +227,7 @@ func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, s
 		return fmt.Errorf("must get at least 1 destination for route '%s'", key)
 	}
 
-	route, err := constructor(key, prefix, sub, regex, destinations)
+	route, err := constructor(key, prefix, sub, regex, destinations, destReplicas)
 	if err != nil {
 		return err
 	}
@@ -245,7 +247,7 @@ func readAddRouteConsistentHashing(s *toki.Scanner, table *Table) error {
 		return err
 	}
 
-	destinations, err := readDestinations(s, table, false)
+	destinations, destReplicas, err := readDestinations(s, table, false)
 	if err != nil {
 		return err
 	}
@@ -253,7 +255,7 @@ func readAddRouteConsistentHashing(s *toki.Scanner, table *Table) error {
 		return fmt.Errorf("must get at least 2 destination for route '%s'", key)
 	}
 
-	route, err := NewRouteConsistentHashing(key, prefix, sub, regex, destinations)
+	route, err := NewRouteConsistentHashing(key, prefix, sub, regex, destinations, destReplicas)
 	if err != nil {
 		return err
 	}
@@ -507,92 +509,115 @@ func readModRoute(s *toki.Scanner, table *Table) error {
 // we should read and apply all destinations at once,
 // or at least make sure we apply them to the global datastruct at once,
 // otherwise we can destabilize things / send wrong traffic, etc
-func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destinations []*Destination, err error) {
+func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destinations []*Destination, destReplicas map[string][]*Destination, err error) {
 	for t := s.Next(); t.Token != toki.EOF; {
 		if t.Token == sep {
 			t = s.Next()
 		}
 		var prefix, sub, regex, addr, spoolDir string
 		var spool, pickle bool
+		var replicaAddrs map[string]bool
 		flush := 1000
 		reconn := 10000
 		spoolDir = table.spoolDir
+		destReplicas = make(map[string][]*Destination)
 
 		if t.Token != word {
-			return destinations, errors.New("addr not set for endpoint")
+			return destinations, destReplicas, errors.New("addr not set for endpoint")
 		}
 		addr = string(t.Value)
+		replicaAddrs = make(map[string]bool)
 
 		for t.Token != toki.EOF && t.Token != sep {
 			t = s.Next()
 			switch t.Token {
 			case optPrefix:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				prefix = string(t.Value)
 			case optSub:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				sub = string(t.Value)
 			case optRegex:
 				if t = s.Next(); t.Token != word {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				regex = string(t.Value)
 			case optFlush:
 				if t = s.Next(); t.Token != num {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				flush, err = strconv.Atoi(strings.TrimSpace(string(t.Value)))
 				if err != nil {
-					return destinations, err
+					return destinations, destReplicas, err
 				}
 			case optReconn:
 				if t = s.Next(); t.Token != num {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				reconn, err = strconv.Atoi(strings.TrimSpace(string(t.Value)))
 				if err != nil {
-					return destinations, err
+					return destinations, destReplicas, err
 				}
 			case optPickle:
 				if t = s.Next(); t.Token != optTrue && t.Token != optFalse {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				pickle, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
-					return destinations, fmt.Errorf("unrecognized pickle value '%s'", t)
+					return destinations, destReplicas, fmt.Errorf("unrecognized pickle value '%s'", t)
 				}
 			case optSpool:
 				if t = s.Next(); t.Token != optTrue && t.Token != optFalse {
-					return destinations, errFmtAddRoute
+					return destinations, destReplicas, errFmtAddRoute
 				}
 				spool, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
-					return destinations, fmt.Errorf("unrecognized spool value '%s'", t)
+					return destinations, destReplicas, fmt.Errorf("unrecognized spool value '%s'", t)
+				}
+			case optReplica:
+				if t = s.Next(); t.Token != word {
+					return destinations, destReplicas, errFmtAddRoute
+				}
+				addrs := strings.Split(string(t.Value), ";")
+				for _, host := range addrs {
+					replicaAddrs[host] = true
 				}
 			case toki.EOF:
 			case sep:
 				break
 			default:
-				return destinations, fmt.Errorf("unrecognized option '%s'", t)
+				return destinations, destReplicas, fmt.Errorf("unrecognized option '%s'", t)
 			}
 		}
 
 		periodFlush := time.Duration(flush) * time.Millisecond
 		periodReConn := time.Duration(reconn) * time.Millisecond
 		if !allowMatcher && (prefix != "" || sub != "" || regex != "") {
-			return destinations, fmt.Errorf("matching options (prefix, sub, and regex) not allowed for this route type")
+			return destinations, destReplicas, fmt.Errorf("matching options (prefix, sub, and regex) not allowed for this route type")
 		}
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
+
 		if err != nil {
-			return destinations, err
+			return destinations, destReplicas, err
 		}
+
+		// Creat NewDestination for replica hosts
+		for host,_ := range replicaAddrs {
+			tmp, err := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
+			if err != nil {
+				return destinations, destReplicas, err
+			}
+			destReplicas[addr] = append(destReplicas[addr], tmp)
+		}
+
+		
 		destinations = append(destinations, dest)
 	}
-	return destinations, nil
+	return destinations, destReplicas, nil
 }
 
 func readRouteOpts(s *toki.Scanner) (prefix, sub, regex string, err error) {

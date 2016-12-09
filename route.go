@@ -10,11 +10,13 @@ import (
 type RouteConfig interface {
 	Matcher() *Matcher
 	Dests() []*Destination
+	Replicas() map[string][]*Destination
 }
 
 type baseRouteConfig struct {
-	matcher Matcher
-	dests   []*Destination
+	matcher   Matcher
+	dests     []*Destination
+	replicas  map[string][]*Destination
 }
 
 func (c baseRouteConfig) Matcher() *Matcher {
@@ -23,6 +25,10 @@ func (c baseRouteConfig) Matcher() *Matcher {
 
 func (c baseRouteConfig) Dests() []*Destination {
 	return c.dests
+}
+
+func (c baseRouteConfig) Replicas() map[string][]*Destination {
+	return c.replicas
 }
 
 type consistentHashingRouteConfig struct {
@@ -43,10 +49,11 @@ type Route interface {
 }
 
 type RouteSnapshot struct {
-	Matcher Matcher        `json:"matcher"`
-	Dests   []*Destination `json:"destination"`
-	Type    string         `json:"type"`
-	Key     string         `json:"key"`
+	Matcher   Matcher        				`json:"matcher"`
+	Dests     []*Destination 				`json:"destination"`
+	Type      string         				`json:"type"`
+	Key       string         				`json:"key"`
+	Replicas  map[string][]*Destination    	`json:"replicas"`
 }
 
 type baseRoute struct {
@@ -70,38 +77,38 @@ type RouteConsistentHashing struct {
 
 // NewRouteSendAllMatch creates a sendAllMatch route.
 // We will automatically run the route and the given destinations
-func NewRouteSendAllMatch(key, prefix, sub, regex string, destinations []*Destination) (Route, error) {
+func NewRouteSendAllMatch(key, prefix, sub, regex string, destinations []*Destination, destReplicas map[string][]*Destination) (Route, error) {
 	m, err := NewMatcher(prefix, sub, regex)
 	if err != nil {
 		return nil, err
 	}
 	r := &RouteSendAllMatch{baseRoute{sync.Mutex{}, atomic.Value{}, key}}
-	r.config.Store(baseRouteConfig{*m, destinations})
+	r.config.Store(baseRouteConfig{*m, destinations, destReplicas})
 	r.run()
 	return r, nil
 }
 
 // NewRouteSendFirstMatch creates a sendFirstMatch route.
 // We will automatically run the route and the given destinations
-func NewRouteSendFirstMatch(key, prefix, sub, regex string, destinations []*Destination) (Route, error) {
+func NewRouteSendFirstMatch(key, prefix, sub, regex string, destinations []*Destination, destReplicas map[string][]*Destination) (Route, error) {
 	m, err := NewMatcher(prefix, sub, regex)
 	if err != nil {
 		return nil, err
 	}
 	r := &RouteSendFirstMatch{baseRoute{sync.Mutex{}, atomic.Value{}, key}}
-	r.config.Store(baseRouteConfig{*m, destinations})
+	r.config.Store(baseRouteConfig{*m, destinations, destReplicas})
 	r.run()
 	return r, nil
 }
 
-func NewRouteConsistentHashing(key, prefix, sub, regex string, destinations []*Destination) (Route, error) {
+func NewRouteConsistentHashing(key, prefix, sub, regex string, destinations []*Destination, destReplicas map[string][]*Destination) (Route, error) {
 	m, err := NewMatcher(prefix, sub, regex)
 	if err != nil {
 		return nil, err
 	}
 	r := &RouteConsistentHashing{baseRoute{sync.Mutex{}, atomic.Value{}, key}}
 	hasher := NewConsistentHasher(destinations)
-	r.config.Store(consistentHashingRouteConfig{baseRouteConfig{*m, destinations},
+	r.config.Store(consistentHashingRouteConfig{baseRouteConfig{*m, destinations, destReplicas},
 		&hasher})
 	r.run()
 	return r, nil
@@ -110,7 +117,13 @@ func NewRouteConsistentHashing(key, prefix, sub, regex string, destinations []*D
 func (route *baseRoute) run() {
 	conf := route.config.Load().(RouteConfig)
 	for _, dest := range conf.Dests() {
+		// run dest
 		dest.Run()
+		// run dest replica
+		addr := dest.Addr + ":" + dest.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			destRep.Run()
+		}
 	}
 }
 
@@ -121,7 +134,13 @@ func (route *RouteSendAllMatch) Dispatch(buf []byte) {
 		if dest.Match(buf) {
 			// dest should handle this as quickly as it can
 			log.Info("route %s sending to dest %s: %s", route.key, dest.Addr, buf)
+			// feed data to dest
 			dest.in <- buf
+			// feed data to dest replicas
+			addr := dest.Addr + ":" + dest.Instance
+			for _, destRep := range conf.Replicas()[addr] {
+				destRep.in <- buf
+			}
 		}
 	}
 }
@@ -133,7 +152,13 @@ func (route *RouteSendFirstMatch) Dispatch(buf []byte) {
 		if dest.Match(buf) {
 			// dest should handle this as quickly as it can
 			log.Info("route %s sending to dest %s: %s", route.key, dest.Addr, buf)
+			// feed data to dest
 			dest.in <- buf
+			// feed data to dest replicas
+			addr := dest.Addr + ":" + dest.Instance
+			for _, destRep := range conf.Replicas()[addr] {
+				destRep.in <- buf
+			}
 			break
 		}
 	}
@@ -146,7 +171,13 @@ func (route *RouteConsistentHashing) Dispatch(buf []byte) {
 		dest := conf.Dests()[conf.Hasher.GetDestinationIndex(name)]
 		// dest should handle this as quickly as it can
 		log.Info("route %s sending to dest %s: %s", route.key, dest.Addr, name)
+		// feed data to dest
 		dest.in <- buf
+		// feed data to dest replicas
+		addr := dest.Addr + ":" + dest.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			destRep.in <- buf
+		}
 	} else {
 		log.Error("could not parse %s\n", buf)
 	}
@@ -169,6 +200,14 @@ func (route *baseRoute) Flush() error {
 		if err != nil {
 			return err
 		}
+		// Iterate destReplica
+		addr := d.Addr + ":" + d.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			err := destRep.Flush()
+			if err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -182,6 +221,14 @@ func (route *baseRoute) Shutdown() error {
 		err := d.Shutdown()
 		if err != nil {
 			destErrs = append(destErrs, err)
+		}
+		// Iterate dest replicas
+		addr := d.Addr + ":" + d.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			err := destRep.Shutdown()
+			if err != nil {
+				destErrs = append(destErrs, err)
+			}
 		}
 	}
 
@@ -199,11 +246,16 @@ func (route *baseRoute) Shutdown() error {
 func makeSnapshot(route *baseRoute, routeType string) RouteSnapshot {
 	conf := route.config.Load().(RouteConfig)
 	dests := make([]*Destination, len(conf.Dests()))
+	replicas :=  make(map[string][]*Destination)
 	for i, d := range conf.Dests() {
 		dests[i] = d.Snapshot()
+		// Take snapshot for replica hosts
+		addr := d.Addr + ":" + d.Instance
+		for _, destRep := range conf.Replicas()[addr] {
+			replicas[addr] = append(replicas[addr], destRep.Snapshot())
+		}
 	}
-	return RouteSnapshot{*conf.Matcher(), dests, routeType, route.key}
-
+	return RouteSnapshot{*conf.Matcher(), dests, routeType, route.key, replicas}
 }
 
 func (route *RouteSendAllMatch) Snapshot() RouteSnapshot {
@@ -259,7 +311,7 @@ func (route *baseRoute) addDestination(dest *Destination, extendConfig baseConfi
 	conf := route.config.Load().(RouteConfig)
 	dest.Run()
 	newDests := append(conf.Dests(), dest)
-	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests})
+	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests, make(map[string][]*Destination)})
 	route.config.Store(newConf)
 }
 
@@ -280,7 +332,7 @@ func (route *baseRoute) delDestination(index int, extendConfig baseConfigExtende
 	}
 	conf.Dests()[index].Shutdown()
 	newDests := append(conf.Dests()[:index], conf.Dests()[index+1:]...)
-	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests})
+	newConf := extendConfig(baseRouteConfig{*conf.Matcher(), newDests, make(map[string][]*Destination)})
 	route.config.Store(newConf)
 	return nil
 }
@@ -323,7 +375,7 @@ func (route *baseRoute) update(opts map[string]string, extendConfig baseConfigEx
 		if err != nil {
 			return err
 		}
-		conf = extendConfig(baseRouteConfig{*matcher, conf.Dests()})
+		conf = extendConfig(baseRouteConfig{*matcher, conf.Dests(), make(map[string][]*Destination)})
 	}
 	route.config.Store(conf)
 	return nil
@@ -348,7 +400,7 @@ func (route *baseRoute) updateDestination(index int, opts map[string]string, ext
 	if err != nil {
 		return err
 	}
-	conf = extendConfig(baseRouteConfig{*conf.Matcher(), conf.Dests()})
+	conf = extendConfig(baseRouteConfig{*conf.Matcher(), conf.Dests(), make(map[string][]*Destination)})
 	route.config.Store(conf)
 	return nil
 }
@@ -365,7 +417,7 @@ func (route *baseRoute) updateMatcher(matcher Matcher, extendConfig baseConfigEx
 	route.Lock()
 	defer route.Unlock()
 	conf := route.config.Load().(RouteConfig)
-	conf = extendConfig(baseRouteConfig{matcher, conf.Dests()})
+	conf = extendConfig(baseRouteConfig{matcher, conf.Dests(), make(map[string][]*Destination)})
 	route.config.Store(conf)
 }
 
