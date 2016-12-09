@@ -515,6 +515,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		}
 		var prefix, sub, regex, addr, spoolDir string
 		var spool, pickle bool
+		var replicaAddrs map[string]bool
 		flush := 1000
 		reconn := 10000
 		spoolDir = table.spoolDir
@@ -523,7 +524,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			return destinations, destReplicas, errors.New("addr not set for endpoint")
 		}
 		addr = string(t.Value)
-		var replicaAddrs := make(map[string]bool)
+		replicaAddrs := make(map[string]bool)
 
 		for t.Token != toki.EOF && t.Token != sep {
 			t = s.Next()
@@ -600,7 +601,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
 
 		// Creat NewDestination for replica hosts
-		for host, value :range replicaAddrs {
+		for host, value := range replicaAddrs {
 			tmp := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
 			destReplicas[addr] = append(destReplicas[addr], tmp)
 		}
