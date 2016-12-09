@@ -520,6 +520,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		flush := 1000
 		reconn := 10000
 		spoolDir = table.spoolDir
+		destReplicas = make(map[string][]*Destination)
 
 		if t.Token != word {
 			return destinations, destReplicas, errors.New("addr not set for endpoint")
