@@ -32,6 +32,7 @@ const (
 	optAddr
 	optSub
 	optRegex
+	optReplica
 	optFlush
 	optReconn
 	optPickle
@@ -206,7 +207,7 @@ func readAddBlack(s *toki.Scanner, table *Table) error {
 	return nil
 }
 
-func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, sub, regex string, destinations []*Destination) (Route, error)) error {
+func readAddRoute(s *toki.Scanner, table *Table, constructor func(key, prefix, sub, regex string, destinations []*Destination, destReplicas map[string][]*Destination) (Route, error)) error {
 	t := s.Next()
 	if t.Token != word {
 		return errFmtAddRoute
@@ -524,7 +525,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			return destinations, destReplicas, errors.New("addr not set for endpoint")
 		}
 		addr = string(t.Value)
-		replicaAddrs := make(map[string]bool)
+		replicaAddrs = make(map[string]bool)
 
 		for t.Token != toki.EOF && t.Token != sep {
 			t = s.Next()
@@ -566,7 +567,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				}
 				pickle, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
-					return destinations, fmt.Errorf("unrecognized pickle value '%s'", t)
+					return destinations, destReplicas, fmt.Errorf("unrecognized pickle value '%s'", t)
 				}
 			case optSpool:
 				if t = s.Next(); t.Token != optTrue && t.Token != optFalse {
@@ -574,7 +575,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				}
 				spool, err = strconv.ParseBool(string(t.Value))
 				if err != nil {
-					return destinations, fmt.Errorf("unrecognized spool value '%s'", t)
+					return destinations, destReplicas, fmt.Errorf("unrecognized spool value '%s'", t)
 				}
 			case optReplica:
 				if t = s.Next(); t.Token != word {
@@ -589,14 +590,14 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 			case sep:
 				break
 			default:
-				return destinations, fmt.Errorf("unrecognized option '%s'", t)
+				return destinations, destReplicas, fmt.Errorf("unrecognized option '%s'", t)
 			}
 		}
 
 		periodFlush := time.Duration(flush) * time.Millisecond
 		periodReConn := time.Duration(reconn) * time.Millisecond
 		if !allowMatcher && (prefix != "" || sub != "" || regex != "") {
-			return destinations, fmt.Errorf("matching options (prefix, sub, and regex) not allowed for this route type")
+			return destinations, destReplicas, fmt.Errorf("matching options (prefix, sub, and regex) not allowed for this route type")
 		}
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
 
