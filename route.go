@@ -10,6 +10,7 @@ import (
 type RouteConfig interface {
 	Matcher() *Matcher
 	Dests() []*Destination
+	Replicas() map[string][]*Destination
 }
 
 type baseRouteConfig struct {
@@ -118,7 +119,7 @@ func (route *baseRoute) run() {
 		// run dest
 		dest.Run()
 		// run dest replica
-		for _, destRep := range conf.replicas[dest.Addr] {
+		for _, destRep := range conf.Replicas()[dest.Addr] {
 			destRep.Run()
 		}
 	}
@@ -134,7 +135,7 @@ func (route *RouteSendAllMatch) Dispatch(buf []byte) {
 			// feed data to dest
 			dest.in <- buf
 			// feed data to dest replicas
-			for _, destRep := range conf.replicas[dest.Addr] {
+			for _, destRep := range conf.Replicas()[dest.Addr] {
 				destRep.in <- buf
 			}
 		}
@@ -151,7 +152,7 @@ func (route *RouteSendFirstMatch) Dispatch(buf []byte) {
 			// feed data to dest
 			dest.in <- buf
 			// feed data to dest replicas
-			for _, destRep := range conf.replicas[dest.Addr] {
+			for _, destRep := range conf.Replicas()[dest.Addr] {
 				destRep.in <- buf
 			}
 			break
@@ -169,7 +170,7 @@ func (route *RouteConsistentHashing) Dispatch(buf []byte) {
 		// feed data to dest
 		dest.in <- buf
 		// feed data to dest replicas
-		for _, destRep := range conf.replicas[dest.Addr] {
+		for _, destRep := range conf.Replicas()[dest.Addr] {
 			destRep.in <- buf
 		}
 	} else {
@@ -195,7 +196,7 @@ func (route *baseRoute) Flush() error {
 			return err
 		}
 		// Iterate destReplica
-		for _, destRep := range conf.replicas[d.Addr] {
+		for _, destRep := range conf.Replicas()[d.Addr] {
 			err := destRep.Flush()
 			if err != nil {
 				return err
@@ -216,7 +217,7 @@ func (route *baseRoute) Shutdown() error {
 			destErrs = append(destErrs, err)
 		}
 		// Iterate dest replicas
-		for _, destRep := range conf.replicas[d.Addr] {
+		for _, destRep := range conf.Replicas()[d.Addr] {
 			err := destRep.Shutdown()
 			if err != nil {
 				destErrs = append(destErrs, err)

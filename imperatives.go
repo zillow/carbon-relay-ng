@@ -581,8 +581,7 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 				if t = s.Next(); t.Token != word {
 					return destinations, destReplicas, errFmtAddRoute
 				}
-				replicas = string(t.Value)
-				addrs = strings.Split(replicas, ";")
+				addrs := strings.Split(string(t.Value), ";")
 				for _, host := range addrs {
 					replicaAddrs[host] = true
 				}
@@ -602,8 +601,9 @@ func readDestinations(s *toki.Scanner, table *Table, allowMatcher bool) (destina
 		dest, err := NewDestination(prefix, sub, regex, addr, spoolDir, spool, pickle, periodFlush, periodReConn)
 
 		// Creat NewDestination for replica hosts
+		var tmp *Destination
 		for host, value := range replicaAddrs {
-			tmp := NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
+			tmp = NewDestination(prefix, sub, regex, host, spoolDir, spool, pickle, periodFlush, periodReConn)
 			destReplicas[addr] = append(destReplicas[addr], tmp)
 		}
 
