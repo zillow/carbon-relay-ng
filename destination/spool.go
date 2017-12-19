@@ -44,7 +44,7 @@ func NewSpool(key, spoolDir string, bufSize int, maxBytesPerFile, syncEvery int6
 	queue := nsqd.NewDiskQueue(dqName, spoolDir, maxBytesPerFile, syncEvery, syncPeriod).(*nsqd.DiskQueue)
 	s := Spool{
 		key:             key,
-		InRT:            make(chan []byte, 10),
+		InRT:            make(chan []byte, 8192),
 		InBulk:          make(chan []byte),
 		Out:             NewSlowChan(queue.ReadChan(), unspoolSleep),
 		spoolSleep:      spoolSleep,
