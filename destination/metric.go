@@ -23,7 +23,7 @@ func parseDataPoint(buf []byte) (*Datapoint, error) {
 	if err != nil {
 		return nil, err
 	}
-	timestamp, err := strconv.ParseUint(elements[2], 10, 32)
+	timestamp, err := strconv.ParseFloat(elements[2], 64)
 	if err != nil {
 		return nil, err
 	}

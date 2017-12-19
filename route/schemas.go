@@ -52,7 +52,7 @@ func parseMetric(buf []byte, schemas persister.WhisperSchemas, orgId int) (*sche
 		return nil, fmt.Errorf(errFmt, msg, err)
 	}
 
-	timestamp, err := strconv.ParseUint(elements[2], 10, 32)
+	timestamp, err := strconv.ParseFloat(elements[2], 64)
 	if err != nil {
 		return nil, fmt.Errorf(errFmt, msg, err)
 	}
