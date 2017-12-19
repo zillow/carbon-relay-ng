@@ -1,19 +1,21 @@
+[![Circle CI](https://circleci.com/gh/graphite-ng/carbon-relay-ng.svg?style=shield)](https://circleci.com/gh/graphite-ng/carbon-relay-ng)
+[![Go Report Card](https://goreportcard.com/badge/github.com/graphite-ng/carbon-relay-ng)](https://goreportcard.com/report/github.com/graphite-ng/carbon-relay-ng)
+[![GoDoc](https://godoc.org/github.com/graphite-ng/carbon-relay-ng?status.svg)](https://godoc.org/github.com/graphite-ng/carbon-relay-ng)
+
 carbon-relay-ng
 ===============
 
 A relay for carbon streams, in go.
 Like carbon-relay from the graphite project, except it:
 
-
- * performs better: should be able to do about 100k ~ 1M million metrics per second depending on configuration
- * you can adjust the routing table at runtime, in real time using the web or telnet interface (interfaces need more work)
- * has aggregator functionality built-in
- * supports a per-route spooling policy.
+ * performs better: should be able to do about 100k ~ 1M million metrics per second depending on configuration and CPU speed.
+ * you can adjust the routing table at runtime, in real time using the web or telnet interface (though they may have some rough edges)
+ * has aggregator functionality built-in for cross-series, cross-time and cross-time-and-series aggregations.
+ * supports plaintext and pickle graphite routes (output) and metrics2.0/grafana.net, as well as kafka.
+ * graphite routes supports a per-route spooling policy.
    (i.e. in case of an endpoint outage, we can temporarily queue the data up to disk and resume later)
- * you can choose between plaintext or pickle output, per route.
- * can be restarted without dropping packets (needs testing)
  * performs validation on all incoming metrics (see below)
-
+ * supported inputs: plaintext, pickle and AMQP (rabbitmq)
 
 This makes it easy to fanout to other tools that feed in on the metrics.
 Or balance/split load, or provide redundancy, or partition the data, etc.
@@ -28,8 +30,8 @@ Limitations
 
 * regex rewriter rules do not support limiting number of replacements, max must be set to -1
 * the web UI is not always reliable to make changes.  the config file and tcp interface are safer and more complete anyway.
-* does not accept pickle protocol as input. (patch welcome!).  To my knowledge the official carbon-aggregator.py and carbon-relay.py only have pickle outputs.
-  So putting carbon-relay-ng behind them will lead to compatibility problems.  If you need this, I'ld love to hear why.
+* internal metrics *must* be routed somewhere (e.g. into the relay itself) otherwise it'll [leak memory](https://github.com/graphite-ng/carbon-relay-ng/issues/50).
+  this is a silly bug but I haven't had time yet to fix it.
 
 
 Releases & versions
@@ -43,8 +45,7 @@ Instrumentation
 
 * Extensive performance variables are available in json at http://localhost:8081/debug/vars2 (update port if you change it in config)
 * You can also send metrics to graphite (or feed back into the relay), see config.
-* Comes with a [grafana dashboard template](https://github.com/graphite-ng/carbon-relay-ng/blob/master/grafana-dashboard.json) so you get up and running in no time.
-* UPDATE: you can now get the [dashboard on grafana.net](https://grafana.net/dashboards/338) !
+* Comes with a [grafana dashboard](https://github.com/graphite-ng/carbon-relay-ng/blob/master/grafana-dashboard.json) which you can also [download from the grafana dashboards site](https://grafana.com/dashboards/338)
 
 ![grafana dashboard](https://raw.githubusercontent.com/graphite-ng/carbon-relay-ng/master/screenshots/grafana-screenshot.png)
 
@@ -53,7 +54,7 @@ Installation
 ------------
 
 You can install packages from the [raintank packagecloud repository](https://packagecloud.io/raintank/raintank)
-We automatically build packages for Ubuntu 14.04 (trusty), 16.04 (xenial), debian 8 (jessie), Centos6 and Centos7 when builds in CircleCI succeed.
+We automatically build packages for Ubuntu 14.04 (trusty), 16.04 (xenial), debian 8, 9, 10 (jessie, stretch and buster/testing), Centos6 and Centos7 when builds in CircleCI succeed.
 [Instructions for enabling the repository](https://packagecloud.io/raintank/raintank/install)
 
 You can also just build a binary (see below) and run the binary with a config file like so:
@@ -64,7 +65,7 @@ You can also just build a binary (see below) and run the binary with a config fi
 Building
 --------
 
-Requires Go 1.4 or higher.
+Requires Go 1.7 or higher.
 We use https://github.com/kardianos/govendor to manage vendoring 3rd party libraries
 
     export GOPATH=/some/path/
@@ -79,12 +80,12 @@ We use https://github.com/kardianos/govendor to manage vendoring 3rd party libra
 Concepts
 --------
 
-You have 1 master routing table.  This table contains 0-N routes.  Each route can contain 0-M destinations (tcp endpoints)
+You have 1 master routing table.  This table contains 0-N routes.  Each carbon route can contain 0-M destinations (tcp endpoints)
 
 First: "matching": you can match metrics on one or more of: prefix, substring, or regex.  All 3 default to "" (empty string, i.e. allow all).
 The conditions are AND-ed.  Regexes are more resource intensive and hence should - and often can be - avoided.
 
-* All incoming matrics are validated and go into the table when valid.
+* All incoming metrics are validated and go into the table when valid.
 * The table will then check metrics against the blacklist and discard when appropriate.
 * Then metrics pass through the rewriters and are modified if applicable.  Rewrite rules wrapped with forward slashes are interpreted as regular expressions.
 * The table sends the metric to:
@@ -92,6 +93,7 @@ The conditions are AND-ed.  Regexes are more resource intensive and hence should
   * any routes that matches
 * The route can have different behaviors, based on its type:
 
+  * for grafanaNet / kafkaMdm routes, there is only a single endpoint so that's where the data goes.  For standard/carbon routes you can control how data gets routed into destinations:
   * sendAllMatch: send all metrics to all the defined endpoints (possibly, and commonly only 1 endpoint).
   * sendFirstMatch: send the metrics to the first endpoint that matches it.
   * consistentHashing: the algorithm is the same as Carbon's consistent hashing.
@@ -100,9 +102,22 @@ The conditions are AND-ed.  Regexes are more resource intensive and hence should
 
 carbon-relay-ng (for now) focuses on staying up and not consuming much resources.
 
-if connection is up but slow, we drop the data
+For carbon routes:
+if connection is up but slow, we drop the data 
 if connection is down and spooling enabled.  we try to spool but if it's slow we drop the data
 if connection is down and spooling disabled -> drop the data
+
+kafka and grafanaNet have an in-memory buffer and can be configured to blocking or non-blocking mode when the buffer runs full.
+
+
+Input
+-----
+
+As with the Python implementation of carbon-relay, metrics can be pushed to carbon-relay-ng via TCP
+(plain text or pickle) or by using an AMQP broker such as RabbitMQ. To send metrics via AMQP, create
+a topic exchange (named "metrics" in the example carbon-relay-ng.ini) and publish messages to it in
+the usual metric format: `<metric path> <metric value> <metric timestamp>`. An exclusive, ephemeral
+queue will automatically be created and bound to the exchange, which carbon-relay-ng will consume from.
 
 
 Validation
@@ -126,38 +141,12 @@ The following are valid values for the `legacy_metric_validation` field:
 * `medium` -- We validate that the metric name has only ASCII characters and no embedded NULLs.
 * `none` -- No metric name checks are performed.
 
-If we detect the metric is in metrics2.0 format we also check proper formatting, and unit and target_type are set.
+If we detect the metric is in metrics2.0 format we also check proper formatting, and unit and mtype are set.
 
 Invalid metrics are dropped and can be seen at /badMetrics/timespec.json where timespec is something like 30s, 10m, 24h, etc.
 (the counters are also exported.  See instrumentation section)
 
 You can also validate that for each series, each point is older than the previous. using the validate_order option.  This is helpful for some backends like grafana.net
-
-
-Rewriting
----------
-
-Series names can be rewritten as they pass through the system by Rewriter rules, which are processed in series.
-
-Basic rules use simple old/new text replacement, and support a Max parameter to specify the maximum number of matched items to be replaced.
-
-Rewriter rules also support regexp syntax, which is enabled by wrapping the "old" parameter with forward slashes and setting "max" to -1.
-
-Regexp rules support [golang's standard regular expression syntax](https://golang.org/pkg/regexp/syntax/), and the "new" value can include [submatch identifiers](https://golang.org/pkg/regexp/#Regexp.Expand) in the format `${1}`.
-
-Examples:
-
-```
-# basic rewriter rule to replace first occurrence of "foo" with "bar"
-addRewriter foo bar 1
-
-# regexp rewriter rule to add a prefix of "prefix." to all series
-addRewriter /^/ prefix. -1
-
-# regexp rewriter rule to replace "server.X" with "servers.X.collectd"
-addRewriter /server\.([^.]+)/ servers.${1}.collectd -1
-```
-
 
 Aggregation
 -----------
@@ -173,19 +162,47 @@ Note:
     if you set the interval to the period between each incoming packet of a given key, and the fmt yields the same key for different input metric keys
   - aggregation of individual metrics, i.e. packets for the same key, with different timestamps.  For example if you receive values for the same key every second, you can aggregate into minutely buckets by setting interval to 60, and have the fmt yield a unique key for every input metric key.  (~ graphite rollups)
   - the combination: compute aggregates from values seen with different keys, and at multiple points in time.
-* functions currently available: avg and sum
-* aggregation output is routed via the routing table just like all other metrics.  Note that aggregation output will never go back into aggregators (to prevent loops) and also bypasses the validation and blacklist.
+* functions currently available: avg, delta, derive, last, max, min, stdev, sum
+* aggregation output is routed via the routing table just like all other metrics.  Note that aggregation output will never go back into aggregators (to prevent loops) and also bypasses the validation and blacklist and rewriters.
 * see the included ini for examples
+* each aggregator can be configured to cache regex matches or not. there is no cache size limit because a limited size, under a typical workload where we see each metric key sequentially, in perpetual cycles, would just result in cache thrashing and wasting memory. If enabled, all matches are cached for at least 100 times the wait parameter. By default, the cache is enabled for aggregators set up via commands (init commands in the config) but disabled for aggregators configured via config sections (due to a limitation in our config library).  Basically enabling the cache means you trade in RAM for cpu.
+* each aggregator may have a prefix and/or substring specified, these are used to reduce overhead by pre-filtering the metrics before they are matched against the regex (if not specified the prefix will be derived from the regex where possible).
+
+Rewriting
+---------
+
+Series names can be rewritten as they pass through the system by Rewriter rules, which are processed in series.
+
+Basic rules use simple old/new text replacement, and support a Max parameter to specify the maximum number of matched items to be replaced.
+
+Rewriter rules also support regexp syntax, which is enabled by wrapping the "old" parameter with forward slashes and setting "max" to -1.
+
+Regexp rules support [golang's standard regular expression syntax](https://golang.org/pkg/regexp/syntax/), and the "new" value can include [submatch identifiers](https://golang.org/pkg/regexp/#Regexp.Expand) in the format `${1}`.
+
+Examples (using init commands. you can also specify them in the config directly. see the included config):
+
+```
+# basic rewriter rule to replace first occurrence of "foo" with "bar"
+addRewriter foo bar 1
+
+# regexp rewriter rule to add a prefix of "prefix." to all series
+addRewriter /^/ prefix. -1
+
+# regexp rewriter rule to replace "server.X" with "servers.X.collectd"
+addRewriter /server\.([^.]+)/ servers.${1}.collectd -1
+```
 
 
 Configuration
 -------------
 
-Look at the included carbon-relay-ng.ini, it should be self describing.
-In the init option you can create routes, populate the blacklist, etc using the same command as the telnet interface, detailed below.
-This mechanism is choosen so we can reuse the code, instead of doing much configuration boilerplate code which would have to execute on
-a declarative specification.  We can just use the same imperative commands since we just set up the initial state here.
+Take a look at the included carbon-relay-ng.ini, which includes comments describing the available options.
 
+The major config sections are the `blacklist` array, and the `[[aggregation]]`, `[[rewriter]]` and `[[route]]` entries.
+
+[Overview of all routes/destinations config options and tuning options](https://github.com/graphite-ng/carbon-relay-ng/blob/master/docs/routes.md)
+
+You can also create routes, populate the blacklist, etc via the `init` config array using the same commands as the telnet interface, detailed below.
 
 TCP interface
 -------------
@@ -200,11 +217,20 @@ commands:
     addRewriter <old> <new> <max>                add rewriter that will rewrite all old to new, max times
                                                  use /old/ to specify a regular expression match, with support for ${1} style identifiers in new
 
-    addAgg <func> <regex> <fmt> <interval> <wait>  add a new aggregation rule.
+    addAgg <func> <match> <fmt> <interval> <wait> [cache=true/false] add a new aggregation rule.
              <func>:                             aggregation function to use
-               sum
                avg
-             <regex>                             regex to match incoming metrics. supports groups (numbered, see fmt)
+               delta
+               derive
+               last
+               max
+               min
+               stdev
+               sum
+             <match>
+               regex=<str>                       mandatory. regex to match incoming metrics. supports groups (numbered, see fmt)
+               sub=<str>                         substring to match incoming metrics before matching regex (can save you CPU)
+               prefix=<str>                      prefix to match incoming metrics before matching regex (can save you CPU). If not specified, will try to automatically determine from regex.
              <fmt>                               format of output metric. you can use $1, $2, etc to refer to numbered groups
              <interval>                          align odd timestamps of metrics into buckets by this interval in seconds.
              <wait>                              amount of seconds to wait for "late" metric messages before computing and flushing final result.
@@ -232,6 +258,16 @@ commands:
                    reconn=<int>                  reconnection interval in ms
                    pickle={true,false}           pickle output format instead of the default text protocol
                    spool={true,false}            enable spooling for this endpoint
+                   connbuf=<int>                 connection buffer (how many metrics can be queued, not written into network conn). default 30k
+                   iobuf=<int>                   buffered io connection buffer in bytes. default: 2M
+                   spoolbuf=<int>                num of metrics to buffer across disk-write stalls. practically, tune this to number of metrics in a second. default: 10000
+                   spoolmaxbytesperfile=<int>    max filesize for spool files. default: 200MiB (200 * 1024 * 1024)
+                   spoolsyncevery=<int>          sync spool to disk every this many metrics. default: 10000
+                   spoolsyncperiod=<int>         sync spool to disk every this many milliseconds. default 1000
+                   spoolsleep=<int>              sleep this many microseconds(!) in between ingests from bulkdata/redo buffers into spool. default 500
+                   unspoolsleep=<int>            sleep this many microseconds(!) in between reads from the spool, when replaying spooled data. default 10
+
+
 
     addDest <routeKey> <dest>                    not implemented yet
 

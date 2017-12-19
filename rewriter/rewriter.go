@@ -9,6 +9,7 @@ var errMaxTooLow = errors.New("max must be >= -1. use -1 to mean no restriction"
 var errInvalidRegexp = errors.New("Invalid rewriter regular expression")
 var errInvalidRegexpMax = errors.New("Regular expression rewriters require max to be -1")
 
+// RW is a rewriter
 type RW struct {
 	Old string `json:"old"`
 	New string `json:"new"`
@@ -18,6 +19,8 @@ type RW struct {
 	re  *regexp.Regexp
 }
 
+// NewFromByte creates a rewriter that will rewrite old to new, up to max times
+// for regex, max must be -1
 func NewFromByte(old, new []byte, max int) (RW, error) {
 	if len(old) == 0 {
 		return RW{}, errEmptyOld
@@ -29,9 +32,9 @@ func NewFromByte(old, new []byte, max int) (RW, error) {
 	Old := string(old)
 
 	var re *regexp.Regexp
-	if len(Old) > 1 && Old[0:1] == "/" && Old[len(Old) - 1:] == "/" {
+	if len(Old) > 1 && Old[0:1] == "/" && Old[len(Old)-1:] == "/" {
 		var err error
-		re, err = regexp.Compile(Old[1:len(Old) - 1])
+		re, err = regexp.Compile(Old[1 : len(Old)-1])
 		if err != nil {
 			return RW{}, errInvalidRegexp
 		}
@@ -59,9 +62,9 @@ func New(old, new string, max int) (RW, error) {
 	}
 
 	var re *regexp.Regexp
-	if len(old) > 1 && old[0:1] == "/" && old[len(old) - 1:] == "/" {
+	if len(old) > 1 && old[0:1] == "/" && old[len(old)-1:] == "/" {
 		var err error
-		re, err = regexp.Compile(old[1:len(old) - 1])
+		re, err = regexp.Compile(old[1 : len(old)-1])
 		if err != nil {
 			return RW{}, errInvalidRegexp
 		}

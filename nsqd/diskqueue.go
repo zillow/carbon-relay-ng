@@ -78,8 +78,14 @@ func NewDiskQueue(name string, dataPath string, maxBytesPerFile int64, syncEvery
 		syncTimeout:       syncTimeout,
 	}
 
+	// Create the spool directory and all of its parents lazily
+	err := os.MkdirAll(d.dataPath, os.ModePerm)
+	if err != nil {
+		log.Printf("ERROR: diskqueue(%s) failed to make directory path:'%s' - %s", d.name, d.dataPath, err.Error())
+	}
+
 	// no need to lock here, nothing else could possibly be touching this instance
-	err := d.retrieveMetaData()
+	err = d.retrieveMetaData()
 	if err != nil && !os.IsNotExist(err) {
 		log.Printf("ERROR: diskqueue(%s) failed to retrieveMetaData - %s", d.name, err.Error())
 	}
@@ -421,7 +427,7 @@ func (d *DiskQueue) persistMetaData() error {
 	f.Close()
 
 	// atomically rename
-	return atomic_rename(tmpFileName, fileName)
+	return os.Rename(tmpFileName, fileName)
 }
 
 func (d *DiskQueue) metaDataFileName() string {
@@ -503,7 +509,7 @@ func (d *DiskQueue) handleReadError() {
 
 	log.Printf("NOTICE: diskqueue(%s) jump to next file and saving bad file as %s", d.name, badRenameFn)
 
-	err := atomic_rename(badFn, badRenameFn)
+	err := os.Rename(badFn, badRenameFn)
 	if err != nil {
 		log.Printf("ERROR: diskqueue(%s) failed to rename bad diskqueue file %s to %s", d.name, badFn, badRenameFn)
 	}

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="carbon-relay-ng">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <link rel="icon" href="../../favicon.ico">
+
+  <title>Carbon-Relay-NG admin</title>
+
+  <!-- Latest compiled and minified CSS -->
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css">
+
+  <!-- Optional theme -->
+  <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap-theme.min.css">
+
+  <link rel="stylesheet" href="/app.css">
+
+  <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+  <!--[if lt IE 9]>
+  <script src="https://oss.maxcdn.com/html5shiv/3.7.2/html5shiv.min.js"></script>
+  <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+  <![endif]-->
+</head>
+
+<body role="document" >
+
+  <!-- Fixed navbar -->
+  <div class="navbar navbar-inverse" role="navigation">
+    <div class="container">
+      <div class="navbar-header">
+        <a class="navbar-brand" href="/">Carbon-Relay-NG</a>
+      </div>
+      <div class="navbar-collapse collapse">
+        <ul class="nav navbar-nav">
+          <li class="active">
+            <a href="/">Home</a>
+          </li>
+          <li>
+            <a href="/badMetrics/24h.json">Bad metrics</a>
+          </li>
+        </ul>
+      </div>
+      <!--/.nav-collapse --> </div>
+  </div>
+
+  <div class="container" role="main" ng-controller="MainCtl">
+    <div>
+      <div class="row" ng-cloak>
+        <alert ng-repeat="alert in alerts">{{alert.msg}}</alert>
+        <div class="col-md-12">
+          <h2>Validation</h2>
+            <table class="table table-condensed">
+              <thead>
+                <tr>
+                  <th>Carbon</th>
+                  <th>Metrics 2.0</th>
+                  <th>Validate order</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>{{config.Validation_level_legacy}}</td>
+                  <td>{{config.Validation_level_m20}}</td>
+                  <td>{{config.Validate_order}}</td>
+                </tr>
+              </tbody>
+          </table>
+        </div>
+        <div class="col-md-12">
+            <h2>Blacklist</h2>
+            <table class="table table-condensed">
+              <thead>
+                <tr>
+                  <th>Match prefix</th>
+                  <th>Match substring</th>
+                  <th>Match regex</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody ng-repeat="b in table.blacklist">
+                <tr>
+                    <td>{{b.prefix}}</td>
+                    <td>{{b.substring}}</td>
+                    <td>{{b.regex}}</td>
+                    <td class="text-center"><a ng-click="removeBlacklist($index)"><i class="glyphicon glyphicon-remove-circle"/></a></td>
+                </tr>
+              </tbody>
+            </table>
+            <h2>Rewriters</h2>
+            <form name="rewriterForm" class="form-add form-group has-feedback" role="form" ng-submit="addRewriter()" novalidate>
+            <table class="table table-condensed">
+              <thead>
+                <tr>
+                  <th>Old</th>
+                  <th>New</th>
+                  <th>Max</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody ng-repeat="r in table.rewriters">
+                <tr>
+                    <td>{{r.old}}</td>
+                    <td>{{r.new}}</td>
+                    <td>{{r.max}}</td>
+                    <td class="text-center"><a ng-click="removeRewriter($index)"><i class="glyphicon glyphicon-remove-circle"/></a></td>
+                </tr>
+              </tbody>
+                <tbody>
+                <tr>
+                    <td class="form-group has-feedback">
+                        <input ng-model="newRewriter.Old" name="old" class="form-control" placeholder="old" required>
+                        <div ng-show="rewriterForm.old.$invalid">
+                            <span ng-show="rewriterForm.old.$error.pattern">Expected non-empty string</span>
+                        </div>
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input ng-model="newRewriter.New" name="new" class="form-control" placeholder="new">
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input type="number" ng-model="newRewriter.Max" name="max" class="form-control" required>
+                        <div ng-show="rewriterForm.max.$invalid">
+                            <span ng-show="rewriterForm.max.$error.pattern">Expected a number to denote max replacements (a positive number, or -1 for no limit)</span>
+                        </div>
+                    </td>
+                    <td>
+                    <button class="btn btn-sm btn-primary btn-block" type="submit" ng-disabled="rewriterForm.$invalid">Add</button>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+            </form>
+            <h2>Aggregators</h2>
+            <form name="aggForm" class="form-add form-group has-feedback" role="form" ng-submit="addAggregator()" novalidate>
+            <table class="table table-condensed">
+              <thead>
+                <tr>
+                  <th>Function</th>
+                  <th>Regex</th>
+                  <th>Output format</th>
+                  <th>Cache</th>
+                  <th>Interval (sec)</th>
+                  <th>Wait (sec)</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody ng-repeat="a in table.aggregators">
+                <tr>
+                    <td>{{a.fun}}</td>
+                    <td>{{a.regex}}</td>
+                    <td>{{a.OutFmt}}</td>
+                    <td>{{a.Cache}}</td>
+                    <td>{{a.Interval}}</td>
+                    <td>{{a.Wait}}</td>
+                    <td class="text-center"><a ng-click="removeAggregator($index)"><i class="glyphicon glyphicon-remove-circle"/></a></td>
+
+                </tr>
+                </tbody>
+                <tbody>
+                <tr>
+                    <td class="form-group has-feedback">
+                        <input ng-model="newAgg.Fun" name="fun" class="form-control" placeholder="Function" required ng-pattern="validAggFunc">
+                        <div ng-show="aggForm.fun.$invalid">
+                            <span ng-show="aggForm.fun.$error.pattern">Expected aggregation function: avg, delta, derive, last, max, min, stdev or sum</span>
+                        </div>
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input ng-model="newAgg.Regex" name="regex" class="form-control" placeholder="regex" ng-pattern="validRegex">
+                        <div ng-show="aggForm.regex.$invalid">
+                            <span ng-show="aggForm.regex.$error.pattern">Expected valid regular expression</span>
+                        </div>
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input ng-model="newAgg.OutFmt" name="outfmt" class="form-control" placeholder="out" required>
+                    </td>
+                    <td class="form-group has-feedback">
+                      <input type="checkbox" ng-model="newAgg.Cache" name="Cache" class="form-control">
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input type="number" ng-model="newAgg.Interval" name="interval" class="form-control" ng-pattern="/^[0-9]+$/">
+                        <div ng-show="aggForm.interval.$invalid">
+                            <span ng-show="aggForm.interval.$error.pattern">Expected a number (in seconds) to denote quantizing interval</span>
+                        </div>
+                    </td>
+                    <td class="form-group has-feedback">
+                        <input type="number" ng-model="newAgg.Wait" name="wait" class="form-control" ng-pattern="/^[0-9]+$/">
+                        <div ng-show="aggForm.wait.$invalid">
+                            <span ng-show="aggForm.wait.$error.pattern">Expected a number (in seconds) to denote max wait</span>
+                        </div>
+                    </td>
+                    <td>
+                    <button class="btn btn-sm btn-primary btn-block" type="submit" ng-disabled="aggForm.$invalid">Add</button>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+            </form>
+            <h2>Routing</h2>
+            <form name="routeForm" class="form-add form-group has-feedback" role="form" ng-submit="addRoute()" novalidate>
+            <table class="table table-condensed">
+              <thead>
+                <tr>
+                    <th></th> <!-- we'll put icons here -->
+                  <th>Route key</th>
+                  <th>Route type</th>
+                  <th>Match prefix</th>
+                  <th>Match substring</th>
+                  <th>Match regex</th>
+                  <th>Address</th>
+                  <th>Spool</th>
+                  <th>Pickle</th>
+                  <th colspan=2 >Actions</th>
+                </tr>
+              </thead>
+              <tbody ng-repeat="r in table.routes">
+                <tr>
+                  <td><span class="glyphicon glyphicon-play" aria-hidden="true"></span></td>
+                  <td class="info">{{r.key}}</td>
+                  <td class="info">{{r.type}}</td>
+                  <td class="info">{{r.matcher.prefix}}</td>
+                  <td class="info">{{r.matcher.substring}}</td>
+                  <td class="info">{{r.matcher.regex}}</td>
+                  <td class="info" colspan="3"></td>
+                  <td class="info" colspan="2"><a ng-click="removeRoute(r.key)"><i class="glyphicon glyphicon-remove-circle"/></a></td>
+                </tr>
+                <tr ng-repeat="d in r.destination">
+                    <td><!--<span class="glyphicon glyphicon-chevron-right" aria-hidden="true"></span>--></td>
+                    <td></td>
+                    <td></td>
+                    <td ng-class="{'danger': !d.online, 'info': d.online}">{{d.matcher.prefix}}</td>
+                    <td ng-class="{'danger': !d.online, 'info': d.online}">{{d.matcher.substring}}</td>
+                    <td ng-class="{'danger': !d.online, 'info': d.online}">{{d.matcher.regex}}</td>
+                    <td ng-class="{'danger': !d.online, 'info': d.online}">{{d.address}}</td>
+                    <td ng-class="{'danger': !d.online, 'info': d.online}" class="text-center">
+                    <icon ng-show="d.spool" class="glyphicon glyphicon-hdd"/>
+                  </td>
+                  <td ng-class="{ 'danger' : !d.online, 'info': d.online}" class="text-center">
+                    <icon ng-show="d.pickle" class="glyphicon glyphicon-ok-sign"/>
+                  </td>
+                  <td ng-class="{ 'danger' : !d.online, 'info': d.online}" colspan="2"><a ng-click="removeDestination(r.key,$index)"><i class="glyphicon glyphicon-remove-circle"/></a></td>
+                </tr>
+              </tbody>
+              <tbody>
+                <tr>
+                  <td><span class="glyphicon glyphicon-play" aria-hidden="true"></span></td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Key" name="Type" class="form-control" required placeholder="route key">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Type" name="Type" class="form-control" placeholder="sendAllMatch" required ng-pattern="validRouteType">
+                    <div ng-show="routeForm.Type.$invalid">
+                      <span ng-show="routeForm.Type.$error.pattern">Expected sendAllMatch, sendFirstMatch, or consistentHashing</span>
+                    </div>
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Prefix" name="Prefix" class="form-control" placeholder="Prefix">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Substring" name="Substring" class="form-control" placeholder="Substring">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Regex" name="Regex" class="form-control" placeholder="Regex" ng-pattern="validRegex">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input ng-model="newRoute.Address" name="Address" class="form-control" required placeholder="Address" ng-pattern="validAddress">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input type="checkbox" ng-model="newRoute.Spool" name="Spool" class="form-control">
+                  </td>
+                  <td class="form-group has-feedback">
+                    <input type="checkbox" ng-model="newRoute.Pickle" name="Pickle" class="form-control">
+                  </td>
+
+                  <td>
+                    <button class="btn btn-sm btn-primary btn-block" type="submit" ng-disabled="routeForm.$invalid">Add</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </form>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  <!-- /container -->
+
+  <!-- Bootstrap core JavaScript
+    ================================================== -->
+  <!-- Placed at the end of the document so the pages load faster -->
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
+  <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+
+  <script src="https://code.angularjs.org/1.2.10/angular.min.js"></script>
+  <script src="https://code.angularjs.org/1.2.10/angular-resource.min.js"></script>
+  <script src="//cdnjs.cloudflare.com/ajax/libs/angular-ui-bootstrap/0.11.0/ui-bootstrap-tpls.js"></script>
+
+  <script src="/app.js"></script>
+  <script type="text/ng-template" id="updateRouteModal.html">
+    <div class="modal-header">
+      <h3 class="modal-title">Update route: {{route.key}}</h3>
+    </div>
+    <form name="form" class="form-add form-group has-feedback" role="form" novalidate>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="patt">Pattern</label>
+          <input ng-model="route.Patt" name="patt" class="form-control" placeholder="Pattern" ng-pattern="validRegex">
+          <div ng-show="form.patt.$invalid">
+            <span ng-show="form.patt.$error.pattern">Expected valid expression</span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="addr">Address</label>
+          <input ng-model="route.Addr" name="addr" class="form-control" placeholder="127.0.0.1:2004" required ng-pattern="validAddress">
+          <div ng-show="form.addr.$invalid">
+            <span ng-show="form.addr.$error.pattern">Expected: 'host:port'</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn bbtn-default" ng-click="cancel()">Close</button>
+        <button class="btn btn-primary" ng-disabled="form.$invalid" ng-click="ok()">Update</button>
+      </div>
+    </form>
+  </script>
+</body>
+</html>
