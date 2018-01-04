@@ -61,6 +61,14 @@ func NewConn(addr string, dest *Destination, periodFlush time.Duration, pickle b
 	if err != nil {
 		return nil, err
 	}
+
+	// set a larger socket write buffer
+	err := conn.SetWriteBuffer(1873800)
+	if err != nil {
+		log.Error(err.Error())
+	}
+
+
 	cleanAddr := util.AddrToPath(addr)
 	connObj := &Conn{
 		conn:              conn,
