@@ -37,7 +37,7 @@ func accept(l *net.TCPListener, handler Handler) {
 		}
 
 		// set a larger socket read buffer
-		err = c.SetReadBuffer(1873800)
+		err = c.SetReadBuffer(436900)
 		if err != nil {
 			log.Error(err.Error())
 		}

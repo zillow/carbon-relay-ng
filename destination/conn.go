@@ -63,7 +63,7 @@ func NewConn(addr string, dest *Destination, periodFlush time.Duration, pickle b
 	}
 
 	// set a larger socket write buffer
-	err = conn.SetWriteBuffer(1873800)
+	err = conn.SetWriteBuffer(436900)
 	if err != nil {
 		log.Error(err.Error())
 	}
